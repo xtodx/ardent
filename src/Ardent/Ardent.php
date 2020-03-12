@@ -6,23 +6,26 @@ use Illuminate\Database\Capsule\Manager as DatabaseCapsule;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Events\Dispatcher;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Hashing\BcryptHasher;
 use Illuminate\Support\MessageBag;
-use Illuminate\Support\Facades\Input;
+use Illuminate\Support\Facades\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Illuminate\Translation\FileLoader;
 use Illuminate\Validation\DatabasePresenceVerifier;
 use Illuminate\Validation\Factory as ValidationFactory;
 use Symfony\Component\Translation\Loader\PhpFileLoader;
-use Symfony\Component\Translation\Translator;
+use Illuminate\Contracts\Translation\Translator;
 
 /**
  * Ardent - Self-validating Eloquent model base class
  *
  */
-abstract class Ardent extends Model {
+abstract class Ardent extends Model
+{
 
     /**
      * The rules to be applied to the data.
@@ -45,7 +48,7 @@ abstract class Ardent extends Model {
      */
     public static $customAttributes = array();
 
-	/**
+    /**
      * The validator object in case you need it externally (say, for a form builder).
      *
      * @see getValidator()
@@ -77,7 +80,7 @@ abstract class Ardent extends Model {
     public static $throwOnFind = false;
 
     /**
-     * If set to true, the object will automatically populate model attributes from Input::all()
+     * If set to true, the object will automatically populate model attributes from Request::all()
      *
      * @var bool
      */
@@ -228,7 +231,8 @@ abstract class Ardent extends Model {
      * @param array $attributes
      * @return \LaravelArdent\Ardent\Ardent
      */
-    public function __construct(array $attributes = array()) {
+    public function __construct(array $attributes = array())
+    {
         parent::__construct($attributes);
         $this->validationErrors = new MessageBag;
     }
@@ -237,22 +241,23 @@ abstract class Ardent extends Model {
      * The "booting" method of the model.
      * Overrided to attach before/after method hooks into the model events.
      *
-     * @see \Illuminate\Database\Eloquent\Model::boot()
      * @return void
+     * @see \Illuminate\Database\Eloquent\Model::boot()
      */
-    public static function boot() {
+    public static function boot()
+    {
         parent::boot();
 
-        $myself   = get_called_class();
-        $hooks    = array('before' => 'ing', 'after' => 'ed');
+        $myself = get_called_class();
+        $hooks = array('before' => 'ing', 'after' => 'ed');
         $radicals = array('sav', 'validat', 'creat', 'updat', 'delet');
 
         foreach ($radicals as $rad) {
             foreach ($hooks as $hook => $event) {
-                $method = $hook.ucfirst($rad).'e';
+                $method = $hook . ucfirst($rad) . 'e';
                 if (method_exists($myself, $method)) {
-                    $eventMethod = $rad.$event;
-                    self::$eventMethod(function($model) use ($method){
+                    $eventMethod = $rad . $event;
+                    self::$eventMethod(function ($model) use ($method) {
                         return $model->$method($model);
                     });
                 }
@@ -260,32 +265,35 @@ abstract class Ardent extends Model {
         }
     }
 
-	public function getObservableEvents() {
-		return array_merge(
-			parent::getObservableEvents(),
-			array('validating', 'validated')
-		);
-	}
+    public function getObservableEvents()
+    {
+        return array_merge(
+            parent::getObservableEvents(),
+            array('validating', 'validated')
+        );
+    }
 
-	/**
-	 * Register a validating model event with the dispatcher.
-	 *
-	 * @param Closure|string $callback
-	 * @return void
-	 */
-	public static function validating($callback) {
-		static::registerModelEvent('validating', $callback);
-	}
+    /**
+     * Register a validating model event with the dispatcher.
+     *
+     * @param Closure|string $callback
+     * @return void
+     */
+    public static function validating($callback)
+    {
+        static::registerModelEvent('validating', $callback);
+    }
 
-	/**
-	 * Register a validated model event with the dispatcher.
-	 *
-	 * @param Closure|string $callback
-	 * @return void
-	 */
-	public static function validated($callback) {
-		static::registerModelEvent('validated', $callback);
-	}
+    /**
+     * Register a validated model event with the dispatcher.
+     *
+     * @param Closure|string $callback
+     * @return void
+     */
+    public static function validated($callback)
+    {
+        static::registerModelEvent('validated', $callback);
+    }
 
     /**
      * Looks for the relation in the {@link $relationsData} array and does the correct magic as Eloquent would require
@@ -297,22 +305,23 @@ abstract class Ardent extends Model {
      *      or there's one or more arguments missing
      * @see Ardent::relationsData
      */
-    protected function handleRelationalArray($relationName) {
-        $relation     = static::$relationsData[$relationName];
+    protected function handleRelationalArray($relationName)
+    {
+        $relation = static::$relationsData[$relationName];
         $relationType = $relation[0];
-        $errorHeader  = "Relation '$relationName' on model '".get_called_class();
+        $errorHeader = "Relation '$relationName' on model '" . get_called_class();
 
         if (!in_array($relationType, static::$relationTypes)) {
-            throw new \InvalidArgumentException($errorHeader.
-            ' should have as first param one of the relation constants of the Ardent class.');
+            throw new \InvalidArgumentException($errorHeader .
+                ' should have as first param one of the relation constants of the Ardent class.');
         }
         if (!isset($relation[1]) && $relationType != self::MORPH_TO) {
-            throw new \InvalidArgumentException($errorHeader.
-            ' should have at least two params: relation type and classname.');
+            throw new \InvalidArgumentException($errorHeader .
+                ' should have at least two params: relation type and classname.');
         }
         if (isset($relation[1]) && $relationType == self::MORPH_TO) {
-            throw new \InvalidArgumentException($errorHeader.
-            ' is a morphTo relation and should not contain additional arguments.');
+            throw new \InvalidArgumentException($errorHeader .
+                ' is a morphTo relation and should not contain additional arguments.');
         }
 
         $verifyArgs = function (array $opt, array $req = array()) use ($relationName, &$relation, $errorHeader) {
@@ -327,8 +336,8 @@ abstract class Ardent extends Model {
             }
 
             if ($missing['req']) {
-                throw new \InvalidArgumentException($errorHeader.'
-                    should contain the following key(s): '.join(', ', $missing['req']));
+                throw new \InvalidArgumentException($errorHeader . '
+                    should contain the following key(s): ' . join(', ', $missing['req']));
             }
             if ($missing['opt']) {
                 foreach ($missing['opt'] as $include) {
@@ -354,10 +363,10 @@ abstract class Ardent extends Model {
             case self::BELONGS_TO_MANY:
                 $verifyArgs(['table', 'foreignKey', 'otherKey', 'relation']);
                 $relationship = $this->$relationType($relation[1], $relation['table'], $relation['foreignKey'], $relation['otherKey'], $relation['relation']);
-                if(isset($relation['pivotKeys']) && is_array($relation['pivotKeys'])) {
+                if (isset($relation['pivotKeys']) && is_array($relation['pivotKeys'])) {
                     $relationship->withPivot($relation['pivotKeys']);
                 }
-                if(isset($relation['timestamps']) && $relation['timestamps']) {
+                if (isset($relation['timestamps']) && $relation['timestamps']) {
                     $relationship->withTimestamps();
                 }
                 return $relationship;
@@ -385,11 +394,12 @@ abstract class Ardent extends Model {
      * Handle dynamic method calls into the method.
      * Overrided from {@link Eloquent} to implement recognition of the {@link $relationsData} array.
      *
-     * @param  string $method
-     * @param  array  $parameters
+     * @param string $method
+     * @param array $parameters
      * @return Relation|Builder|mixed
      */
-    public function __call($method, $parameters) {
+    public function __call($method, $parameters)
+    {
         if (array_key_exists($method, static::$relationsData)) {
             return $this->handleRelationalArray($method);
         }
@@ -398,90 +408,92 @@ abstract class Ardent extends Model {
     }
 
 
-	/**
-	 * Define an inverse one-to-one or many relationship.
-	 * Overriden from {@link Eloquent\Model} to allow the usage of the intermediary methods to handle the {@link
-	 * $relationsData} array.
-	 *
-	 * @param  string  $related
-	 * @param  string  $foreignKey
-	 * @param  string  $otherKey
-	 * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-	 */
-	public function belongsTo($related, $foreignKey = NULL, $otherKey = NULL, $relation = NULL) {
+    /**
+     * Define an inverse one-to-one or many relationship.
+     * Overriden from {@link Eloquent\Model} to allow the usage of the intermediary methods to handle the {@link
+     * $relationsData} array.
+     *
+     * @param string $related
+     * @param string $foreignKey
+     * @param string $otherKey
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function belongsTo($related, $foreignKey = NULL, $otherKey = NULL, $relation = NULL)
+    {
 
-		// If no foreign key was supplied, we can use a backtrace to guess the proper
-		// foreign key name by using the name of the relationship function, which
-		// when combined with an "_id" should conventionally match the columns.
-		if (is_null($relation)) {
-			$backtrace = debug_backtrace(false, 4);
-			if ($backtrace[1]['function'] == 'handleRelationalArray') {
-				$relation = $backtrace[1]['args'][0];
-			} else {
-				$relation = $backtrace[3]['function'];
-			}
-		}
+        // If no foreign key was supplied, we can use a backtrace to guess the proper
+        // foreign key name by using the name of the relationship function, which
+        // when combined with an "_id" should conventionally match the columns.
+        if (is_null($relation)) {
+            $backtrace = debug_backtrace(false, 4);
+            if ($backtrace[1]['function'] == 'handleRelationalArray') {
+                $relation = $backtrace[1]['args'][0];
+            } else {
+                $relation = $backtrace[3]['function'];
+            }
+        }
 
-		if (is_null($foreignKey)) {
-			$foreignKey = snake_case($relation).'_id';
-		}
+        if (is_null($foreignKey)) {
+            $foreignKey = Str::snake($relation) . '_id';
+        }
 
-		// Once we have the foreign key names, we'll just create a new Eloquent query
-		// for the related models and returns the relationship instance which will
-		// actually be responsible for retrieving and hydrating every relations.
-		$instance = new $related;
-		
-		$otherKey = $otherKey ?: $instance->getKeyName();
-		
-		$query = $instance->newQuery();
+        // Once we have the foreign key names, we'll just create a new Eloquent query
+        // for the related models and returns the relationship instance which will
+        // actually be responsible for retrieving and hydrating every relations.
+        $instance = new $related;
 
-		return new BelongsTo($query, $this, $foreignKey, $otherKey, $relation);
-	}
+        $otherKey = $otherKey ?: $instance->getKeyName();
 
-	/**
-	 * Define an polymorphic, inverse one-to-one or many relationship.
-	 * Overriden from {@link Eloquent\Model} to allow the usage of the intermediary methods to handle the {@link
-	 * $relationsData} array.
-	 *
-	 * @param  string  $name
-	 * @param  string  $type
-	 * @param  string  $id
-	 * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-	 */
-	public function morphTo($name = null, $type = null, $id = null, $ownerKey = null) {
-		// If no name is provided, we will use the backtrace to get the function name
-		// since that is most likely the name of the polymorphic interface. We can
-		// use that to get both the class and foreign key that will be utilized.
-		if (is_null($name))
-		{
-			$backtrace = debug_backtrace(false);
-			$caller = ($backtrace[1]['function'] == 'handleRelationalArray')? $backtrace[3] : $backtrace[1];
+        $query = $instance->newQuery();
 
-			$name = snake_case($caller['function']);
-		}
+        return new BelongsTo($query, $this, $foreignKey, $otherKey, $relation);
+    }
 
-		// Next we will guess the type and ID if necessary. The type and IDs may also
-		// be passed into the function so that the developers may manually specify
-		// them on the relations. Otherwise, we will just make a great estimate.
-		list($type, $id) = $this->getMorphs($name, $type, $id);
+    /**
+     * Define an polymorphic, inverse one-to-one or many relationship.
+     * Overriden from {@link Eloquent\Model} to allow the usage of the intermediary methods to handle the {@link
+     * $relationsData} array.
+     *
+     * @param string $name
+     * @param string $type
+     * @param string $id
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function morphTo($name = null, $type = null, $id = null, $ownerKey = null)
+    {
+        // If no name is provided, we will use the backtrace to get the function name
+        // since that is most likely the name of the polymorphic interface. We can
+        // use that to get both the class and foreign key that will be utilized.
+        if (is_null($name)) {
+            $backtrace = debug_backtrace(false);
+            $caller = ($backtrace[1]['function'] == 'handleRelationalArray') ? $backtrace[3] : $backtrace[1];
 
-		$class = $this->$type;
+            $name = Str::snake($caller['function']);
+        }
 
-		return $this->belongsTo($class, $id);
-	}
+        // Next we will guess the type and ID if necessary. The type and IDs may also
+        // be passed into the function so that the developers may manually specify
+        // them on the relations. Otherwise, we will just make a great estimate.
+        list($type, $id) = $this->getMorphs($name, $type, $id);
+
+        $class = $this->$type;
+
+        return $this->belongsTo($class, $id);
+    }
 
     /**
      * Get an attribute from the model.
      * Overrided from {@link Eloquent} to implement recognition of the {@link $relationsData} array.
      *
-     * @param  string $key
+     * @param string $key
      * @return mixed
      */
-    public function getAttribute($key) {
+    public function getAttribute($key)
+    {
         $attr = parent::getAttribute($key);
 
         if ($attr === null) {
-            $camelKey = camel_case($key);
+            $camelKey = ucwords($key);
             if (array_key_exists($camelKey, static::$relationsData)) {
                 $this->relations[$key] = $this->$camelKey()->getResults();
                 return $this->relations[$key];
@@ -493,28 +505,33 @@ abstract class Ardent extends Model {
 
     /**
      * Configures Ardent to be used outside of Laravel - correctly setting Eloquent and Validation modules.
-     * @todo Should allow for additional language files. Would probably receive a Translator instance as an optional argument, or a list of translation files.
-     *
      * @param array $connection Connection info used by {@link \Illuminate\Database\Capsule\Manager::addConnection}.
      * Should contain driver, host, port, database, username, password, charset and collation.
+     * @todo Should allow for additional language files. Would probably receive a Translator instance as an optional argument, or a list of translation files.
+     *
      */
-    public static function configureAsExternal(array $connection, $lang = 'en') {
-        $db = new DatabaseCapsule;
+    public static function configureAsExternal(array $connection, $lang = 'en')
+    {
+        $db = new DatabaseCapsule();
         $db->addConnection($connection);
         $db->setEventDispatcher(new Dispatcher(new Container));
         //TODO: configure a cache manager (as an option)
 
         // Make this Capsule instance available globally via static methods
         $db->setAsGlobal();
-        
+
         $db->bootEloquent();
 
-        $translator = new Translator($lang);
-        $translator->addLoader('file_loader', new PhpFileLoader());
-        $translator->addResource('file_loader',
-            dirname(__FILE__).DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'lang'.DIRECTORY_SEPARATOR.$lang.
-            DIRECTORY_SEPARATOR.'validation.php', $lang);
 
+//        $translator = new Translator($lang);
+//        $translator->addLoader('file_loader', new PhpFileLoader());
+//        $translator->addResource('file_loader',
+//            dirname(__FILE__).DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'lang'.DIRECTORY_SEPARATOR.$lang.
+//            DIRECTORY_SEPARATOR.'validation.php', $lang);
+
+        //nofixed
+
+        $translator = new \Illuminate\Translation\Translator(new FileLoader(new Filesystem(), dirname(__FILE__) . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'lang' . DIRECTORY_SEPARATOR . $lang . DIRECTORY_SEPARATOR), $lang);
         self::$external = true;
         self::$validationFactory = new ValidationFactory($translator);
         self::$validationFactory->setPresenceVerifier(new DatabasePresenceVerifier($db->getDatabaseManager()));
@@ -533,8 +550,9 @@ abstract class Ardent extends Model {
      * @return \Illuminate\Validation\Validator
      * @see Ardent::$externalValidator
      */
-    protected static function makeValidator($data, $rules, $customMessages, $customAttributes) {
-        return self::$external?
+    protected static function makeValidator($data, $rules, $customMessages, $customAttributes)
+    {
+        return self::$external ?
             self::$validationFactory->make($data, $rules, $customMessages, $customAttributes) :
             Validator::make($data, $rules, $customMessages, $customAttributes);
     }
@@ -542,13 +560,14 @@ abstract class Ardent extends Model {
     /**
      * Validate the model instance
      *
-     * @param array $rules            Validation rules
-     * @param array $customMessages   Custom error messages
+     * @param array $rules Validation rules
+     * @param array $customMessages Custom error messages
      * @param array $customAttributes Custom attributes
      * @return bool
      * @throws InvalidModelException
      */
-    public function validate(array $rules = array(), array $customMessages = array(), array $customAttributes = array()) {
+    public function validate(array $rules = array(), array $customMessages = array(), array $customAttributes = array())
+    {
         if ($this->fireModelEvent('validating') === false) {
             if ($this->throwOnValidation) {
                 throw new InvalidModelException($this);
@@ -558,7 +577,7 @@ abstract class Ardent extends Model {
         }
 
         // check for overrides, then remove any empty rules
-        $rules = (empty($rules))? static::$rules : $rules;
+        $rules = (empty($rules)) ? static::$rules : $rules;
         foreach ($rules as $field => $rls) {
             if ($rls == '') {
                 unset($rules[$field]);
@@ -568,40 +587,40 @@ abstract class Ardent extends Model {
         if (empty($rules)) {
             $success = true;
         } else {
-			$customMessages = (empty($customMessages))? static::$customMessages : $customMessages;
-			$customAttributes = (empty($customAttributes))? static::$customAttributes : $customAttributes;
+            $customMessages = (empty($customMessages)) ? static::$customMessages : $customMessages;
+            $customAttributes = (empty($customAttributes)) ? static::$customAttributes : $customAttributes;
 
-			if ($this->forceEntityHydrationFromInput || (empty($this->attributes) && $this->autoHydrateEntityFromInput)) {
-				$this->fill(Input::all());
-			}
+            if ($this->forceEntityHydrationFromInput || (empty($this->attributes) && $this->autoHydrateEntityFromInput)) {
+                $this->fill(Request::all());
+            }
 
-			$data = $this->getAttributes(); // the data under validation
+            $data = $this->getAttributes(); // the data under validation
 
-			// perform validation
-			$this->validator = static::makeValidator($data, $rules, $customMessages, $customAttributes);
-			$success   = $this->validator->passes();
+            // perform validation
+            $this->validator = static::makeValidator($data, $rules, $customMessages, $customAttributes);
+            $success = $this->validator->passes();
 
-			if ($success) {
-				// if the model is valid, unset old errors
-				if ($this->validationErrors === null || $this->validationErrors->count() > 0) {
-					$this->validationErrors = new MessageBag;
-				}
-			} else {
-				// otherwise set the new ones
-				$this->validationErrors = $this->validator->messages();
+            if ($success) {
+                // if the model is valid, unset old errors
+                if ($this->validationErrors === null || $this->validationErrors->count() > 0) {
+                    $this->validationErrors = new MessageBag;
+                }
+            } else {
+                // otherwise set the new ones
+                $this->validationErrors = $this->validator->messages();
 
-				// stash the input to the current session
-				if (!self::$external && Input::hasSession()) {
-					Input::flash();
-				}
-			}
-		}
+                // stash the input to the current session
+                if (!self::$external && Request::hasSession()) {
+                    Request::flash();
+                }
+            }
+        }
 
         $this->fireModelEvent('validated', false);
 
-	    if (!$success && $this->throwOnValidation) {
-		    throw new InvalidModelException($this);
-	    }
+        if (!$success && $this->throwOnValidation) {
+            throw new InvalidModelException($this);
+        }
 
         return $success;
     }
@@ -609,24 +628,25 @@ abstract class Ardent extends Model {
     /**
      * Save the model to the database. Is used by {@link save()} and {@link forceSave()} as a way to DRY code.
      *
-     * @param array   $rules
-     * @param array   $customMessages
-     * @param array   $options
+     * @param array $rules
+     * @param array $customMessages
+     * @param array $options
      * @param Closure $beforeSave
      * @param Closure $afterSave
-     * @param bool    $force          Forces saving invalid data.
-     * 
+     * @param bool $force Forces saving invalid data.
+     *
      * @return bool
      * @see Ardent::save()
      * @see Ardent::forceSave()
      */
     protected function internalSave(array $rules = array(),
-        array $customMessages = array(),
-        array $options = array(),
-        Closure $beforeSave = null,
-        Closure $afterSave = null,
-        $force = false
-    ) {
+                                    array $customMessages = array(),
+                                    array $options = array(),
+                                    Closure $beforeSave = null,
+                                    Closure $afterSave = null,
+                                    $force = false
+    )
+    {
         if ($beforeSave) {
             self::saving($beforeSave);
         }
@@ -646,9 +666,9 @@ abstract class Ardent extends Model {
     /**
      * Save the model to the database.
      *
-     * @param array   $rules
-     * @param array   $customMessages
-     * @param array   $options
+     * @param array $rules
+     * @param array $customMessages
+     * @param array $options
      * @param Closure $beforeSave
      * @param Closure $afterSave
      *
@@ -656,31 +676,33 @@ abstract class Ardent extends Model {
      * @see Ardent::forceSave()
      */
     public function save(array $rules = array(),
-        array $customMessages = array(),
-        array $options = array(),
-        Closure $beforeSave = null,
-        Closure $afterSave = null
-    ) {
+                         array $customMessages = array(),
+                         array $options = array(),
+                         Closure $beforeSave = null,
+                         Closure $afterSave = null
+    )
+    {
         return $this->internalSave($rules, $customMessages, $options, $beforeSave, $afterSave, false);
     }
 
     /**
      * Force save the model even if validation fails.
      *
-     * @param array   $rules
-     * @param array   $customMessages
-     * @param array   $options
+     * @param array $rules
+     * @param array $customMessages
+     * @param array $options
      * @param Closure $beforeSave
      * @param Closure $afterSave
      * @return bool
      * @see Ardent::save()
      */
     public function forceSave(array $rules = array(),
-        array $customMessages = array(),
-        array $options = array(),
-        Closure $beforeSave = null,
-        Closure $afterSave = null
-    ) {
+                              array $customMessages = array(),
+                              array $options = array(),
+                              Closure $beforeSave = null,
+                              Closure $afterSave = null
+    )
+    {
         return $this->internalSave($rules, $customMessages, $options, $beforeSave, $afterSave, true);
     }
 
@@ -690,7 +712,8 @@ abstract class Ardent extends Model {
      *
      * @return void
      */
-    protected function addBasicPurgeFilters() {
+    protected function addBasicPurgeFilters()
+    {
         if ($this->purgeFiltersInitialized) {
             return;
         }
@@ -723,10 +746,11 @@ abstract class Ardent extends Model {
      * @param array $array Input array
      * @return array
      */
-    protected function purgeArray(array $array = array()) {
+    protected function purgeArray(array $array = array())
+    {
 
         $result = array();
-        $keys   = array_keys($array);
+        $keys = array_keys($array);
 
         $this->addBasicPurgeFilters();
 
@@ -758,7 +782,8 @@ abstract class Ardent extends Model {
      * @param array $options
      * @return bool
      */
-    protected function performSave(array $options) {
+    protected function performSave(array $options)
+    {
 
         if ($this->autoPurgeRedundantAttributes) {
             $this->attributes = $this->purgeArray($this->getAttributes());
@@ -776,7 +801,8 @@ abstract class Ardent extends Model {
      *
      * @return \Illuminate\Support\MessageBag
      */
-    public function errors() {
+    public function errors()
+    {
         return $this->validationErrors;
     }
 
@@ -785,8 +811,9 @@ abstract class Ardent extends Model {
      * @param $value
      * @return string
      */
-    protected function hashPassword($value) {
-        return self::$external? self::$hasher->make($value) : Hash::make($value);
+    protected function hashPassword($value)
+    {
+        return self::$external ? self::$hasher->make($value) : Hash::make($value);
     }
 
     /**
@@ -797,7 +824,8 @@ abstract class Ardent extends Model {
      * @param array $passwordAttributes
      * @return array
      */
-    protected function hashPasswordAttributes(array $attributes = array(), array $passwordAttributes = array()) {
+    protected function hashPasswordAttributes(array $attributes = array(), array $passwordAttributes = array())
+    {
 
         if (empty($passwordAttributes) || empty($attributes)) {
             return $attributes;
@@ -828,14 +856,15 @@ abstract class Ardent extends Model {
      * @param array $rules
      * @return array Rules with exclusions applied
      */
-    public function buildUniqueExclusionRules(array $rules = array()) {
-      
+    public function buildUniqueExclusionRules(array $rules = array())
+    {
+
         if (!count($rules))
-          $rules = static::$rules;
+            $rules = static::$rules;
 
         foreach ($rules as $field => &$ruleset) {
             // If $ruleset is a pipe-separated string, switch it to array
-            $ruleset = (is_string($ruleset))? explode('|', $ruleset) : $ruleset;
+            $ruleset = (is_string($ruleset)) ? explode('|', $ruleset) : $ruleset;
 
             foreach ($ruleset as &$rule) {
                 if (strpos($rule, 'unique:') === 0) {
@@ -864,7 +893,7 @@ abstract class Ardent extends Model {
                             $uniqueRules[3] = $this->{$this->primaryKey};
 
                             // If optional where rules are passed, append them otherwise use primary key
-                            $uniqueRules[4] = isset($params[3])? $params[3] : $this->primaryKey;
+                            $uniqueRules[4] = isset($params[3]) ? $params[3] : $this->primaryKey;
                         }
                     } else {
                         if (isset($this->id)) {
@@ -872,11 +901,11 @@ abstract class Ardent extends Model {
                         }
                     }
 
-                    $rule = 'unique:'.implode(',', $uniqueRules);
+                    $rule = 'unique:' . implode(',', $uniqueRules);
                 }
             }
         }
-        
+
         return $rules;
     }
 
@@ -884,46 +913,49 @@ abstract class Ardent extends Model {
      * Update a model, but filter uniques first to ensure a unique validation rule
      * does not fire
      *
-     * @param array   $rules
-     * @param array   $customMessages
-     * @param array   $options
+     * @param array $rules
+     * @param array $customMessages
+     * @param array $options
      * @param Closure $beforeSave
      * @param Closure $afterSave
      * @return bool
      */
     public function updateUniques(array $rules = array(),
-        array $customMessages = array(),
-        array $options = array(),
-        Closure $beforeSave = null,
-        Closure $afterSave = null
-    ) {
+                                  array $customMessages = array(),
+                                  array $options = array(),
+                                  Closure $beforeSave = null,
+                                  Closure $afterSave = null
+    )
+    {
         $rules = $this->buildUniqueExclusionRules($rules);
-        
+
         return $this->save($rules, $customMessages, $options, $beforeSave, $afterSave);
     }
 
-	/**
-	 * Validates a model with unique rules properly treated.
-	 *
-	 * @param array $rules Validation rules
-	 * @param array $customMessages Custom error messages
-	 * @return bool
-	 * @see Ardent::validate()
-	 */
-	public function validateUniques(array $rules = array(), array $customMessages = array()) {
-		$rules = $this->buildUniqueExclusionRules($rules);
-		return $this->validate($rules, $customMessages);
-	}
+    /**
+     * Validates a model with unique rules properly treated.
+     *
+     * @param array $rules Validation rules
+     * @param array $customMessages Custom error messages
+     * @return bool
+     * @see Ardent::validate()
+     */
+    public function validateUniques(array $rules = array(), array $customMessages = array())
+    {
+        $rules = $this->buildUniqueExclusionRules($rules);
+        return $this->validate($rules, $customMessages);
+    }
 
     /**
      * Find a model by its primary key.
      * If {@link $throwOnFind} is set, will use {@link findOrFail} internally.
      *
-     * @param  mixed $id
-     * @param  array $columns
+     * @param mixed $id
+     * @param array $columns
      * @return Ardent|Collection
      */
-    public static function find($id, $columns = array('*')) {
+    public static function find($id, $columns = array('*'))
+    {
         $debug = debug_backtrace(false);
 
         if (static::$throwOnFind && $debug[1]['function'] != 'findOrFail') {
@@ -934,25 +966,27 @@ abstract class Ardent extends Model {
         }
     }
 
-	/**
-	 * Get a new query builder for the model's table.
-	 * Overriden from {@link \Model\Eloquent} to allow for usage of {@link throwOnFind} in our {@link Builder}.
-	 *
-	 * @see Model::newQueryWithoutScopes()
-	 * @return \Illuminate\Database\Eloquent\Builder
-	 */
-	public function newQueryWithoutScopes() {
-		$builder = new Builder($this->newBaseQueryBuilder());
-		$builder->throwOnFind = static::$throwOnFind;
+    /**
+     * Get a new query builder for the model's table.
+     * Overriden from {@link \Model\Eloquent} to allow for usage of {@link throwOnFind} in our {@link Builder}.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
+     * @see Model::newQueryWithoutScopes()
+     */
+    public function newQueryWithoutScopes()
+    {
+        $builder = new Builder($this->newBaseQueryBuilder());
+        $builder->throwOnFind = static::$throwOnFind;
 
-		return $builder->setModel($this)->with($this->with);
-	}
+        return $builder->setModel($this)->with($this->with);
+    }
 
     /**
      * Returns the validator object created after {@link validate()}.
      * @return \Illuminate\Validation\Validator
      */
-    public function getValidator() {
+    public function getValidator()
+    {
         return $this->validator;
     }
 }
