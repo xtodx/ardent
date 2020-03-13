@@ -531,7 +531,7 @@ abstract class Ardent extends Model
 
         //nofixed
 
-        $translator = new \Illuminate\Translation\Translator(new FileLoader(new Filesystem(), dirname(__FILE__) . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'lang' . DIRECTORY_SEPARATOR . $lang . DIRECTORY_SEPARATOR), $lang);
+        $translator = new \Illuminate\Contracts\Translation\Translator(new FileLoader(new Filesystem(), dirname(__FILE__) . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'lang' . DIRECTORY_SEPARATOR . $lang . DIRECTORY_SEPARATOR), $lang);
         self::$external = true;
         self::$validationFactory = new ValidationFactory($translator);
         self::$validationFactory->setPresenceVerifier(new DatabasePresenceVerifier($db->getDatabaseManager()));
