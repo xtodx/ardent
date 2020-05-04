@@ -552,9 +552,8 @@ abstract class Ardent extends Model
      */
     protected static function makeValidator($data, $rules, $customMessages, $customAttributes)
     {
-        return self::$external ?
-            self::$validationFactory->make($data, $rules, $customMessages, $customAttributes) :
-            Validator::make($data, $rules, $customMessages, $customAttributes);
+        return Validator::make($data, $rules, $customMessages, $customAttributes);
+            
     }
 
     /**
